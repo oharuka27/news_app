@@ -101,8 +101,16 @@ async function fetchAndStore(url, sortByDate, key) {
   return entry;
 }
 
+// refreshAfterSec: 何秒後に再読み込みすれば取得し直すか（画面で「○時○分から再読み込みできます」と表示するため）。
+// 端末の時計のずれに影響されないよう、時刻ではなく残り秒数で返す。取得に失敗した内容はすぐ再試行できるよう 0。
 function toResult(entry, limit, stale) {
-  return { items: entry.items.slice(0, limit), fetchedAt: new Date(entry.at).toISOString(), stale };
+  const refreshAfterMs = stale ? 0 : Math.max(0, entry.at + FRESH_MS - Date.now());
+  return {
+    items: entry.items.slice(0, limit),
+    fetchedAt: new Date(entry.at).toISOString(),
+    stale,
+    refreshAfterSec: Math.ceil(refreshAfterMs / 1000),
+  };
 }
 
 // 取得結果は Cache API に保存し、同じデータセンターを使う全利用者で共有する。

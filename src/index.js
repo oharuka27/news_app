@@ -41,8 +41,8 @@ async function newsResponse(env, origin, { url, sortByDate, translate, extra }) 
     return json({ error: 'ニュースの取得に失敗しました' }, 502);
   }
 
-  const { items, fetchedAt, stale } = feed;
-  const meta = { ...extra, fetchedAt, stale };
+  const { items, fetchedAt, stale, refreshAfterSec } = feed;
+  const meta = { ...extra, fetchedAt, stale, refreshAfterSec };
   if (translate) return json({ ...meta, ...(await withTranslatedTitles(items, env)) });
   return json({ ...meta, items });
 }

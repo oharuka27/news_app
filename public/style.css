@@ -145,6 +145,24 @@ body {
   border-color: var(--accent);
 }
 
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button:disabled:hover {
+  border-color: var(--border);
+}
+
+.fetch-info {
+  flex: 1 1 100%;
+  order: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: right;
+}
+
 .button-primary {
   background: var(--accent);
   border-color: var(--accent);

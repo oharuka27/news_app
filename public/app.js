@@ -2,6 +2,7 @@ const tabsEl = document.getElementById('tabs');
 const listEl = document.getElementById('news-list');
 const statusEl = document.getElementById('status');
 const reloadEl = document.getElementById('reload');
+const fetchInfoEl = document.getElementById('fetch-info');
 const noticeEl = document.getElementById('notice');
 const translateToggleEl = document.getElementById('translate-toggle');
 const translateEl = document.getElementById('translate');
@@ -24,7 +25,11 @@ let translationEnabled = false;
 let currentThemeId = null;
 let customSearch = { query: '', lang: 'ja' };
 // タブを切り替えるたびに再取得しないよう、取得結果を画面側でも保持する
+// （値は { items, fetchedAt, reloadableAt }）
 const newsCache = new Map();
+// 表示中のニュースの取得時刻と、再読み込みで新しい内容を取れるようになる時刻（端末の時計基準）
+let currentFeed = null;
+let reloadTimer = null;
 
 function formatDate(iso) {
   if (!iso) return '';
@@ -36,6 +41,38 @@ function formatDate(iso) {
 function showStatus(message) {
   statusEl.textContent = message;
   statusEl.hidden = !message;
+}
+
+function formatTime(value) {
+  return new Date(value).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
+// サーバーは 10 分間同じ内容を返すため、それまでは再読み込みボタンを押せなくし、いつから押せるかを表示する
+function updateReloadState() {
+  clearTimeout(reloadTimer);
+  if (!currentFeed) {
+    fetchInfoEl.hidden = true;
+    return;
+  }
+
+  const waitMs = currentFeed.reloadableAt - Date.now();
+  const fetched = `${formatTime(currentFeed.fetchedAt)} 取得`;
+  fetchInfoEl.hidden = false;
+  if (waitMs > 0) {
+    reloadEl.disabled = true;
+    fetchInfoEl.textContent = `${fetched} ・ ${formatTime(currentFeed.reloadableAt)} から再読み込みできます`;
+    // 押せるようになる時刻に表示を切り替える
+    reloadTimer = setTimeout(updateReloadState, waitMs + 500);
+  } else {
+    reloadEl.disabled = false;
+    fetchInfoEl.textContent = `${fetched} ・ 再読み込みで最新のニュースを確認できます`;
+  }
+}
+
+function setCurrentFeed(feed) {
+  currentFeed = feed;
+  reloadEl.disabled = false;
+  updateReloadState();
 }
 
 function showNotice(message) {
@@ -215,6 +252,7 @@ async function loadNews(themeId, { force = false } = {}) {
   showNotice('');
   const request = requestFor(themeId);
   if (!request) {
+    setCurrentFeed(null);
     listEl.replaceChildren();
     showStatus('キーワードを入力して検索してください');
     return;
@@ -223,22 +261,34 @@ async function loadNews(themeId, { force = false } = {}) {
   const { url, cacheKey, translate } = request;
   const renderOptions = { themeLabel: themeLabelFor(themeId) };
   if (!force && newsCache.has(cacheKey)) {
-    renderItems(newsCache.get(cacheKey), renderOptions);
+    const cached = newsCache.get(cacheKey);
+    renderItems(cached.items, renderOptions);
+    setCurrentFeed(cached);
     showStatus('');
     return;
   }
 
   listEl.replaceChildren();
+  setCurrentFeed(null);
+  reloadEl.disabled = true; // 読み込み中の連打を防ぐ
   showStatus(translate ? '読み込み・翻訳中…' : '読み込み中…');
   try {
     const res = await fetch(url);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    // 翻訳に失敗した結果や、取得に失敗して返された古い内容はキャッシュせず、次回また取得を試みる
-    if (!data.translationError && !data.stale) newsCache.set(cacheKey, data.items);
+    // 翻訳や取得に失敗した場合は、すぐにやり直せるよう再読み込みを待たせない
+    const failed = Boolean(data.translationError || data.stale);
+    const feed = {
+      items: data.items,
+      fetchedAt: data.fetchedAt,
+      reloadableAt: failed ? 0 : Date.now() + (data.refreshAfterSec ?? 0) * 1000,
+    };
+    // 失敗した結果はキャッシュせず、次回また取得を試みる
+    if (!failed) newsCache.set(cacheKey, feed);
     // 読み込み中にタブや検索条件が変わっていたら描画しない
     if (cacheKey !== requestFor(currentThemeId)?.cacheKey) return;
     renderItems(data.items, renderOptions);
+    setCurrentFeed(feed);
     showNotice([
       data.stale && `ニュースの取得に失敗したため、${formatDate(data.fetchedAt)} 時点の内容を表示しています`,
       data.translationError,
@@ -246,6 +296,7 @@ async function loadNews(themeId, { force = false } = {}) {
     showStatus(data.items.length ? '' : 'ニュースが見つかりませんでした');
   } catch (err) {
     if (cacheKey !== requestFor(currentThemeId)?.cacheKey) return;
+    setCurrentFeed(null);
     showStatus(err.message || 'ニュースの取得に失敗しました');
   }
 }
