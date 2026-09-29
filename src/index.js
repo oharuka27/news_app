@@ -1,6 +1,8 @@
 import { fetchFeed, searchUrl } from './news.js';
 import { THEMES, findTheme } from './themes.js';
-import { isTranslationEnabled, translateToJapanese, TranslationError } from './translate.js';
+import {
+  deleteOldTranslations, isTranslationEnabled, translateToJapanese, TranslationError,
+} from './translate.js';
 
 // Cloudflare Worker の入口。
 // public/ の静的ファイルは Workers の静的アセットとして配信され、該当ファイルがないパスだけがここに来る。
@@ -18,6 +20,7 @@ async function withTranslatedTitles(items, env) {
   try {
     const translated = await translateToJapanese(items.map((item) => item.title), {
       apiKey: env.DEEPL_API_KEY,
+      db: env.DB,
     });
     return {
       items: items.map((item, i) => ({ ...item, translatedTitle: translated[i] })),
@@ -92,5 +95,12 @@ export default {
     const newsMatch = pathname.match(/^\/api\/news\/([^/]+)$/);
     if (newsMatch) return handleThemeNews(newsMatch[1], searchParams, env, origin);
     return json({ error: 'Not Found' }, 404);
+  },
+
+  // Cron Trigger（wrangler.jsonc の triggers.crons）で 1 日 1 回実行
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(deleteOldTranslations(env.DB).then((deleted) => {
+      console.log(`古い翻訳を ${deleted} 件削除しました`);
+    }));
   },
 };

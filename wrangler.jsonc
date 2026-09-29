@@ -7,6 +7,23 @@
   "assets": {
     "directory": "./public"
   },
+  // 翻訳結果の保存先。database_id は `npx wrangler d1 create news-app` の出力に置き換える（README 参照）
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "news-app",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // 古い翻訳を毎日 3:00（日本時間）に削除する（cron は UTC で指定）
+  "triggers": {
+    "crons": ["0 18 * * *"]
+  },
+  // 独自ドメインで公開する場合はコメントを外してドメインを書き換える（README の「Cloudflare へのデプロイ」参照）
+  // "routes": [
+  //   { "pattern": "news.example.com", "custom_domain": true }
+  // ],
   "observability": {
     "enabled": true
   }

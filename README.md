@@ -38,7 +38,11 @@
 - **翻訳: DeepL API Free**
   - 月 50 万文字まで無料（登録時に本人確認用のクレジットカード登録が必要ですが、課金はされません）。
   - 無料枠を節約するため、翻訳するのは **見出しのみ**。
-    一度翻訳した見出しはサーバーのメモリにキャッシュし、再読み込みしても再翻訳しません。
+    一度翻訳した見出しは **D1**（Cloudflare の SQL データベース）に保存し、全利用者・全データセンターで再利用します。
+  - 翻訳の保存先に KV ではなく D1 を選んだのは、無料枠の書き込み上限の差のためです
+    （KV は 1 日 1,000 回、D1 は 1 日 10 万行）。新しい英語の見出しが出るたびに書き込むので、KV では足りなくなるおそれがあります。
+  - D1 に接続できないときは DeepL を呼ばずに翻訳を止めます（設定ミスのまま毎回訳し直して無料枠を使い切るのを防ぐため）。
+  - 30 日より古い翻訳は毎日 3:00（日本時間）に定期実行（Cron Trigger）で削除します。
   - 目安: 1 タブ 10 件 × 約 80 文字 ≒ 800 文字。3 タブすべて新しい見出しでも 1 回 2,400 文字程度です。
   - API キー未設定でもアプリは動きます（翻訳チェックボックスが無効になるだけ）。
 
@@ -88,7 +92,7 @@
 | --- | --- | --- | --- | --- |
 | ① 画面側 | `public/app.js` の `newsCache` | テーマ + 翻訳有無（カスタムは検索条件） | なし（ページ再読み込みで消える） | ブラウザごと |
 | ② フィード | `src/news.js`（Cache API） | フィード URL | 10 分（取得失敗時の予備として 1 日保持） | データセンターごとに全利用者 |
-| ③ 翻訳 | `src/translate.js` の `translationCache` | 英語の見出し | なし（サーバー再起動で消える） | 全利用者 |
+| ③ 翻訳 | `src/translate.js`（D1 の `translations` テーブル） | 英語の見出し | 30 日（毎日の定期実行で削除） | 全世界の全利用者 |
 
 - **タブ切り替え**: ① にあればそれを表示し、通信しません。
 - **「再読み込み」ボタン**: ① を無視してサーバーに問い合わせます。② が 10 分以内なら ② の内容が返るため、
@@ -110,7 +114,8 @@
 │   ├── news.js        # Google News RSS の取得・整形・キャッシュ（Cache API）
 │   ├── rss.js         # RSS から必要な要素だけを取り出す軽量パーサー
 │   ├── themes.js      # 固定テーマ（タブ）の定義
-│   └── translate.js   # DeepL API での翻訳とキャッシュ
+│   └── translate.js   # DeepL API での翻訳と D1 への保存
+├── migrations/        # D1 のテーブル定義（wrangler d1 migrations apply で適用）
 ├── .dev.vars.example  # ローカル開発用の秘密情報のサンプル（.dev.vars にコピーして使う）
 └── public/            # フロントエンド（素の HTML / CSS / JS、ビルド不要）
     ├── index.html
@@ -165,6 +170,9 @@
 # 依存パッケージのインストール（初回のみ）
 npm install
 
+# ローカル用 D1 にテーブルを作成（初回と、migrations/ にファイルが増えたとき）
+npm run db:migrate:local
+
 # 起動（Cloudflare Workers の実行環境をローカルで再現する。ファイル変更は自動で反映）
 npm run dev
 ```
@@ -191,3 +199,56 @@ npm run dev -- --port 8080
 
 `.dev.vars` は `.gitignore` 済みなので、キーがコミットされることはありません。
 使用済み文字数は DeepL のアカウントページで確認できます。
+
+## Cloudflare へのデプロイ
+
+GitHub の `main` に push すると、Cloudflare Workers Builds が自動でデプロイします。初回だけ以下の準備が必要です。
+
+### 1. D1 データベースを作成する（初回のみ・ローカルで実行）
+
+```bash
+npx wrangler login                 # ブラウザで Cloudflare にログイン
+npx wrangler d1 create news-app    # 出力される database_id を控える
+```
+
+`wrangler.jsonc` の `database_id`（`00000000-...` のダミー値）を控えた ID に書き換えて、コミット・プッシュします。
+続けて、本番の D1 にテーブルを作成します。
+
+```bash
+npm run db:migrate:remote
+```
+
+`migrations/` にファイルを追加したときも、デプロイ前にこのコマンドを実行してください。
+
+### 2. GitHub リポジトリを Cloudflare に接続する
+
+1. Cloudflare ダッシュボードの **Workers & Pages** から新しいアプリケーションを作成し、GitHub リポジトリ（`oharuka27/news_app`）をインポート
+2. Worker 名は `wrangler.jsonc` の `name`（`news-app`）と同じにする
+3. ビルドコマンドは空欄、デプロイコマンドは `npx wrangler deploy` のまま
+4. 以降は `main` への push で自動デプロイ。それ以外のブランチにはプレビュー URL が発行されます
+
+### 3. DeepL の API キーを登録する
+
+Worker の **設定 > 変数とシークレット** で、種類を「シークレット」にして `DEEPL_API_KEY` を追加します。
+コマンドの場合は `npx wrangler secret put DEEPL_API_KEY` です。
+
+### 4. 独自ドメインを設定する
+
+ドメインを Cloudflare の DNS で管理している必要があります。
+
+- `wrangler.jsonc` の `routes` のコメントを外し、`news.example.com` を公開したいドメインに書き換えてプッシュする
+- （または）Worker の **設定 > ドメインとルート** からカスタムドメインを追加する
+
+フィードのキャッシュに使う Cache API は独自ドメインで確実に動作します（`*.workers.dev` での動作は公式に明記されていません）。
+独自ドメインだけで公開したい場合は、`wrangler.jsonc` に `"workers_dev": false` を追加すると `workers.dev` の URL を無効にできます。
+
+### 無料プランの上限（目安）
+
+| サービス | 無料枠 | このアプリでの使い方 |
+| --- | --- | --- |
+| Workers | 1 日 10 万リクエスト、CPU 時間 10ms/リクエスト | `/api/*` のみ（静的ファイルは無料・無制限） |
+| Cache API | 回数の上限なし | フィードのキャッシュ |
+| D1 | 読み取り 1 日 500 万行、書き込み 1 日 10 万行、容量 5GB | 翻訳の保存 |
+| DeepL API Free | 月 50 万文字 | 見出しの翻訳。超えても課金されず、その月は翻訳が止まるだけ |
+
+アクセスが増えて Google のアクセス制限や DeepL の無料枠が問題になった場合は、Cloudflare Access（50 人まで無料）で閲覧者を絞ることを検討してください。
