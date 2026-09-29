@@ -2,12 +2,10 @@ import { parseRssItems } from './rss.js';
 
 // Google News RSS は API キー不要・無料で利用できる
 const GOOGLE_NEWS_BASE = 'https://news.google.com/rss';
-const CACHE_TTL_MS = 10 * 60 * 1000; // 取得元への負荷を抑えるため 10 分キャッシュ
-const MAX_CACHE_ENTRIES = 200; // カスタム検索でキーワードごとに増え続けないよう上限を設ける
-
+const FRESH_MS = 10 * 60 * 1000; // 取得元への負荷を抑えるため 10 分間は取得し直さない
+// 取得に失敗したとき前回の内容を返せるよう、Cache API には 10 分より長く残しておく
+const CACHE_KEEP_SECONDS = 24 * 60 * 60;
 const FETCH_TIMEOUT_MS = 10000;
-
-const cache = new Map();
 
 const LOCALES = {
   ja: { hl: 'ja', gl: 'JP', ceid: 'JP:ja' },
@@ -56,10 +54,40 @@ function byDateDesc(a, b) {
   return (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
 }
 
-// 取得中のフィード（URL → Promise）。同時に来た要求で Google への取得を共有する
+// Cache API（データセンターごとの共有キャッシュ）のキー。
+// キーは URL である必要があるため、自サイトのオリジン配下の、外部からは使わないパスを使う。
+function cacheKey(origin, url) {
+  return new Request(`${origin}/__cache/feed?url=${encodeURIComponent(url)}`);
+}
+
+async function readCache(key) {
+  try {
+    const res = await caches.default.match(key);
+    return res ? await res.json() : null;
+  } catch (err) {
+    console.error('キャッシュの読み込みに失敗しました', err);
+    return null;
+  }
+}
+
+async function writeCache(key, entry) {
+  try {
+    await caches.default.put(key, new Response(JSON.stringify(entry), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': `max-age=${CACHE_KEEP_SECONDS}`,
+      },
+    }));
+  } catch (err) {
+    // キャッシュに書けなくてもニュースは返せるので、記録だけして続ける
+    console.error('キャッシュの書き込みに失敗しました', err);
+  }
+}
+
+// 取得中のフィード（URL → Promise）。同じインスタンスに同時に来た要求で Google への取得を共有する
 const pendingFetches = new Map();
 
-async function fetchAndStore(url, sortByDate) {
+async function fetchAndStore(url, sortByDate, key) {
   const items = parseRssItems(await downloadFeed(url)).map((item) => ({
     title: splitTitle(item.title, item.source),
     link: item.link,
@@ -69,10 +97,7 @@ async function fetchAndStore(url, sortByDate) {
   if (sortByDate) items.sort(byDateDesc);
 
   const entry = { at: Date.now(), items };
-  cache.delete(url);
-  cache.set(url, entry);
-  // Map は挿入順を保つので、先頭が最も古いエントリ
-  if (cache.size > MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value);
+  await writeCache(key, entry);
   return entry;
 }
 
@@ -80,28 +105,28 @@ function toResult(entry, limit, stale) {
   return { items: entry.items.slice(0, limit), fetchedAt: new Date(entry.at).toISOString(), stale };
 }
 
-// 取得結果は全利用者で共有する。
+// 取得結果は Cache API に保存し、同じデータセンターを使う全利用者で共有する。
 // - 10 分以内に取得済みならキャッシュを返す（誰が再読み込みしても同じ内容）
-// - 同じフィードを取得中なら自分では取りに行かず、その結果を待つ
+// - 同じフィードを取得中なら自分では取りに行かず、その結果を待つ（同じインスタンス内のみ）
 // - 取得に失敗しても期限切れのキャッシュがあればそれを返す（stale: true）
-export async function fetchFeed(url, { limit = 10, sortByDate = false } = {}) {
-  const cached = cache.get(url);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+export async function fetchFeed(url, { origin, limit = 10, sortByDate = false }) {
+  const key = cacheKey(origin, url);
+  const cached = await readCache(key);
+  if (cached && Date.now() - cached.at < FRESH_MS) {
     return toResult(cached, limit, false);
   }
 
   let pending = pendingFetches.get(url);
   if (!pending) {
-    pending = fetchAndStore(url, sortByDate).finally(() => pendingFetches.delete(url));
+    pending = fetchAndStore(url, sortByDate, key).finally(() => pendingFetches.delete(url));
     pendingFetches.set(url, pending);
   }
 
   try {
     return toResult(await pending, limit, false);
   } catch (err) {
-    const stale = cache.get(url);
-    if (!stale) throw err;
+    if (!cached) throw err;
     console.warn(`フィードの取得に失敗したため前回の内容を返します: ${url}`, err.message);
-    return toResult(stale, limit, true);
+    return toResult(cached, limit, true);
   }
 }

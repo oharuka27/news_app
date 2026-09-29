@@ -29,10 +29,10 @@ async function withTranslatedTitles(items, env) {
   }
 }
 
-async function newsResponse(env, { url, sortByDate, translate, extra }) {
+async function newsResponse(env, origin, { url, sortByDate, translate, extra }) {
   let feed;
   try {
-    feed = await fetchFeed(url, { limit: ITEMS_PER_THEME, sortByDate });
+    feed = await fetchFeed(url, { origin, limit: ITEMS_PER_THEME, sortByDate });
   } catch (err) {
     console.error(url, err);
     return json({ error: 'ニュースの取得に失敗しました' }, 502);
@@ -53,10 +53,10 @@ function handleThemes(env) {
   });
 }
 
-function handleThemeNews(themeId, searchParams, env) {
+function handleThemeNews(themeId, searchParams, env, origin) {
   const theme = findTheme(themeId);
   if (!theme) return json({ error: '不明なテーマです' }, 404);
-  return newsResponse(env, {
+  return newsResponse(env, origin, {
     url: theme.url,
     sortByDate: theme.sortByDate,
     translate: searchParams.get('translate') === '1' && theme.translatable,
@@ -65,7 +65,7 @@ function handleThemeNews(themeId, searchParams, env) {
 }
 
 // カスタムタブ: ユーザーが入力したキーワードで Google News を検索する
-function handleSearch(searchParams, env) {
+function handleSearch(searchParams, env, origin) {
   const q = (searchParams.get('q') ?? '').trim();
   const lang = SEARCH_LANGS.includes(searchParams.get('lang')) ? searchParams.get('lang') : 'ja';
   if (!q) return json({ error: 'キーワードを入力してください' }, 400);
@@ -73,7 +73,7 @@ function handleSearch(searchParams, env) {
     return json({ error: `キーワードは ${MAX_QUERY_LENGTH} 文字以内で入力してください` }, 400);
   }
   // 直近 1 週間に絞って新しい順に並べる（ニッチなキーワードでも件数を確保するため 1 日より広め）
-  return newsResponse(env, {
+  return newsResponse(env, origin, {
     url: searchUrl(`${q} when:7d`, lang),
     sortByDate: true,
     translate: searchParams.get('translate') === '1' && lang === 'en',
@@ -83,14 +83,14 @@ function handleSearch(searchParams, env) {
 
 export default {
   async fetch(request, env) {
-    const { pathname, searchParams } = new URL(request.url);
+    const { origin, pathname, searchParams } = new URL(request.url);
     if (!pathname.startsWith('/api/')) return new Response('Not Found', { status: 404 });
     if (request.method !== 'GET') return json({ error: 'Method Not Allowed' }, 405);
 
     if (pathname === '/api/themes') return handleThemes(env);
-    if (pathname === '/api/search') return handleSearch(searchParams, env);
+    if (pathname === '/api/search') return handleSearch(searchParams, env, origin);
     const newsMatch = pathname.match(/^\/api\/news\/([^/]+)$/);
-    if (newsMatch) return handleThemeNews(newsMatch[1], searchParams, env);
+    if (newsMatch) return handleThemeNews(newsMatch[1], searchParams, env, origin);
     return json({ error: 'Not Found' }, 404);
   },
 };
