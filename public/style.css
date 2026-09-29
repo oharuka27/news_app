@@ -29,14 +29,70 @@ body {
 }
 
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
+  padding: 12px 16px 0;
 }
 
 .header h1 {
-  margin: 0;
+  max-width: 820px;
+  margin: 0 auto;
   font-size: 1.25rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  max-width: 820px;
+  margin: 8px auto 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  flex: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--accent);
 }
 
 .main {

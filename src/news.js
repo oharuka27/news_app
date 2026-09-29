@@ -21,8 +21,15 @@ function localeQuery(lang) {
   return new URLSearchParams({ hl, gl, ceid }).toString();
 }
 
-export function topHeadlinesUrl(lang = 'ja') {
-  return `${GOOGLE_NEWS_BASE}?${localeQuery(lang)}`;
+// トピック: WORLD / NATION / BUSINESS / TECHNOLOGY など
+export function topicUrl(topic, lang = 'ja') {
+  return `${GOOGLE_NEWS_BASE}/headlines/section/topic/${topic}?${localeQuery(lang)}`;
+}
+
+// キーワード検索（`when:1d` などの検索演算子も使える）
+export function searchUrl(query, lang = 'ja') {
+  const q = new URLSearchParams({ q: query }).toString();
+  return `${GOOGLE_NEWS_BASE}/search?${q}&${localeQuery(lang)}`;
 }
 
 // Google News のタイトルは「見出し - 媒体名」形式なので媒体名を切り離す
@@ -39,7 +46,11 @@ function sourceNameOf(item) {
   return typeof src === 'string' ? src : (src._ ?? '');
 }
 
-export async function fetchFeed(url, limit = 10) {
+function byDateDesc(a, b) {
+  return (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
+}
+
+export async function fetchFeed(url, { limit = 10, sortByDate = false } = {}) {
   const cached = cache.get(url);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return cached.items.slice(0, limit);
@@ -55,6 +66,7 @@ export async function fetchFeed(url, limit = 10) {
       publishedAt: item.isoDate ?? null,
     };
   });
+  if (sortByDate) items.sort(byDateDesc);
 
   cache.set(url, { at: Date.now(), items });
   return items.slice(0, limit);
