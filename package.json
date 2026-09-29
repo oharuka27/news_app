@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply news-app --local",
-    "db:migrate:remote": "wrangler d1 migrations apply news-app --remote"
+    "db:migrate:local": "wrangler d1 migrations apply news-app-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply news-app-db --remote"
   },
   "devDependencies": {
     "wrangler": "^4.143.0"

@@ -208,10 +208,13 @@ GitHub の `main` に push すると、Cloudflare Workers Builds が自動でデ
 
 ```bash
 npx wrangler login                 # ブラウザで Cloudflare にログイン
-npx wrangler d1 create news-app    # 出力される database_id を控える
+npx wrangler d1 create news-app-db # 出力される database_id を控える
 ```
 
+作成時に「設定ファイルに追加しますか」と聞かれた場合は **No** を選んでください（`wrangler.jsonc` にはすでに設定があり、自動で追加すると重複します）。
+
 `wrangler.jsonc` の `database_id`（`00000000-...` のダミー値）を控えた ID に書き換えて、コミット・プッシュします。
+ID を書き換えるとローカル用の D1 も別のものになるため、ローカルで `npm run db:migrate:local` をもう一度実行してください。
 続けて、本番の D1 にテーブルを作成します。
 
 ```bash
