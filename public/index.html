@@ -1,38 +1,69 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-section="world">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ニュースまとめ</title>
+  <title>見て世界のニュース</title>
+  <meta name="description" content="世界・国内・マーケット・テクノロジーのニュースをテーマ別にまとめ、英語の見出しは DeepL で日本語に翻訳して届けるニュースアプリ。">
+  <meta name="theme-color" content="#f4efe6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101217" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23161616'/%3E%3Ctext x='32' y='45' font-family='sans-serif' font-size='38' font-weight='700' text-anchor='middle' fill='%23f4efe6'%3E見%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="header">
-    <h1>ニュースまとめ</h1>
-    <nav id="tabs" class="tabs" role="tablist" aria-label="テーマ"></nav>
+  <a class="skip-link" href="#panel">本文へスキップ</a>
+
+  <header class="masthead">
+    <div class="masthead-rail">
+      <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span>見て世界のニュース</h1>
+      <p class="masthead-meta">
+        <span class="masthead-edition">Curated by Google News · Translated by DeepL</span>
+        <time id="today" class="masthead-date"></time>
+      </p>
+    </div>
   </header>
+
+  <nav class="section-nav" aria-label="テーマ">
+    <div id="tabs" class="tabs" role="tablist"></div>
+  </nav>
+
   <main class="main" id="panel" role="tabpanel">
     <form id="custom-form" class="custom-form" hidden>
-      <input id="custom-query" class="custom-query" type="search" maxlength="100"
-             placeholder="キーワード（例: 半導体、Apple、円安）" aria-label="検索キーワード" required>
+      <div class="custom-field">
+        <svg class="custom-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="custom-query" class="custom-query" type="search" maxlength="100"
+               placeholder="例：半導体、Apple、円安" aria-label="検索キーワード" required>
+      </div>
       <select id="custom-lang" class="custom-lang" aria-label="検索する言語">
         <option value="ja">日本語ニュース</option>
         <option value="en">英語ニュース</option>
       </select>
       <button class="button button-primary" type="submit">検索</button>
     </form>
+
     <div id="toolbar" class="toolbar">
+      <p id="section-desc" class="section-desc"></p>
       <p id="fetch-info" class="fetch-info" aria-live="polite" hidden></p>
       <label id="translate-toggle" class="toggle" hidden>
-        <input id="translate" type="checkbox">
+        <input id="translate" class="toggle-input" type="checkbox" role="switch">
+        <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
         日本語に翻訳（DeepL）
       </label>
-      <button id="reload" class="button" type="button">再読み込み</button>
+      <button id="reload" class="button" type="button">
+        <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+        再読み込み
+      </button>
     </div>
+
     <p id="notice" class="notice" hidden></p>
     <p id="status" class="status">読み込み中…</p>
     <ol id="news-list" class="news-list"></ol>
   </main>
+
+  <footer class="site-footer">
+    <p class="footer-note">ニュースの著作権は各配信元に帰属します。見出しは Google News RSS から取得しています。</p>
+  </footer>
+
   <script src="read-later.js"></script>
   <script src="app.js"></script>
 </body>

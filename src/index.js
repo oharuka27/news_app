@@ -11,6 +11,12 @@ const ITEMS_PER_THEME = 10;
 const MAX_QUERY_LENGTH = 100;
 const SEARCH_LANGS = ['ja', 'en'];
 
+// /api/translate（「後で読む」に保存した見出しの翻訳）の上限。
+// 任意の文章を送れる口になるため、DeepL の無料枠を使い込まれないよう見出し程度の量に制限する
+const MAX_TRANSLATE_TEXTS = 20; // 「後で読む」の最大件数と同じ
+const MAX_TRANSLATE_TEXT_LENGTH = 300;
+const MAX_TRANSLATE_TOTAL_LENGTH = 3000;
+
 function json(data, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
@@ -84,10 +90,51 @@ function handleSearch(searchParams, env, origin) {
   });
 }
 
+// 「後で読む」タブ用: 保存済みの見出しをまとめて翻訳する（翻訳結果は D1 に保存して再利用）
+async function handleTranslate(request, env, origin) {
+  // 他のサイトのページから呼ばれるのを防ぐ（ブラウザは POST に Origin ヘッダーを付ける）
+  const requestOrigin = request.headers.get('Origin');
+  if (requestOrigin && requestOrigin !== origin) return json({ error: 'Forbidden' }, 403);
+  if (!isTranslationEnabled(env.DEEPL_API_KEY)) {
+    return json({ error: 'DEEPL_API_KEY が設定されていません' }, 503);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'リクエストの形式が正しくありません' }, 400);
+  }
+  const texts = body?.texts;
+  const valid = Array.isArray(texts)
+    && texts.length > 0
+    && texts.length <= MAX_TRANSLATE_TEXTS
+    && texts.every((t) => typeof t === 'string' && t.trim() && t.length <= MAX_TRANSLATE_TEXT_LENGTH)
+    && texts.reduce((sum, t) => sum + t.length, 0) <= MAX_TRANSLATE_TOTAL_LENGTH;
+  if (!valid) {
+    return json({
+      error: `翻訳できるのは ${MAX_TRANSLATE_TEXTS} 件・1 件 ${MAX_TRANSLATE_TEXT_LENGTH} 文字までです`,
+    }, 400);
+  }
+
+  try {
+    const translations = await translateToJapanese(texts, { apiKey: env.DEEPL_API_KEY, db: env.DB });
+    return json({ translations });
+  } catch (err) {
+    if (!(err instanceof TranslationError)) console.error(err);
+    const message = err instanceof TranslationError ? err.message : 'DeepL での翻訳に失敗しました';
+    return json({ error: message }, 502);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const { origin, pathname, searchParams } = new URL(request.url);
     if (!pathname.startsWith('/api/')) return new Response('Not Found', { status: 404 });
+    if (pathname === '/api/translate') {
+      if (request.method !== 'POST') return json({ error: 'Method Not Allowed' }, 405);
+      return handleTranslate(request, env, origin);
+    }
     if (request.method !== 'GET') return json({ error: 'Method Not Allowed' }, 405);
 
     if (pathname === '/api/themes') return handleThemes(env);

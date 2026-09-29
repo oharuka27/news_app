@@ -9,7 +9,8 @@ const translateEl = document.getElementById('translate');
 const customFormEl = document.getElementById('custom-form');
 const customQueryEl = document.getElementById('custom-query');
 const customLangEl = document.getElementById('custom-lang');
-const toolbarEl = document.getElementById('toolbar');
+const sectionDescEl = document.getElementById('section-desc');
+const todayEl = document.getElementById('today');
 
 const TAB_STORAGE_KEY = 'news_app:lastTab';
 const TRANSLATE_STORAGE_KEY = 'news_app:translate';
@@ -19,6 +20,21 @@ const CUSTOM_STORAGE_KEY = 'news_app:custom';
 const CUSTOM_THEME = { id: 'custom', label: 'カスタム', custom: true };
 // ☆ を付けた記事を一覧するタブ（ブラウザに保存した内容を表示するだけで通信しない）
 const READ_LATER_THEME = { id: 'read-later', label: '後で読む' };
+
+// 各タブの説明文
+const SECTION_DESCRIPTIONS = {
+  world: '海外主要メディアが伝える国際ニュース',
+  domestic: '国内の主要ニュース',
+  'ny-market': 'ウォール街・米国株の動き（直近 24 時間）',
+  tse: '東証・日経平均・TOPIX の動き（直近 24 時間）',
+  crypto: 'ビットコインなど暗号資産の動き（直近 24 時間）',
+  tech: 'テクノロジーの話題',
+  custom: '',
+  'read-later': `☆ を付けた記事（このブラウザに最大 ${READ_LATER_MAX} 件）`,
+};
+const SKELETON_COUNT = 5;
+// /api/translate の 1 件あたりの上限（サーバー側と同じ）
+const MAX_TRANSLATE_TEXT_LENGTH = 300;
 
 let themes = [];
 let translationEnabled = false;
@@ -36,6 +52,18 @@ function formatDate(iso) {
   return new Date(iso).toLocaleString('ja-JP', {
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
   });
+}
+
+// 「3 時間前」のような相対表示（1 週間以上前は日時）
+function formatRelative(iso) {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return 'たった今';
+  if (minutes < 60) return `${minutes} 分前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 時間前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} 日前`;
+  return formatDate(iso);
 }
 
 function showStatus(message) {
@@ -84,8 +112,15 @@ function currentTheme() {
   return themes.find((t) => t.id === currentThemeId);
 }
 
+// 保存時に言語を記録していない古い記事は、見出しに日本語の文字がなければ英語とみなす
+function isEnglishItem(item) {
+  if (item.lang) return item.lang === 'en';
+  return !/[\u3040-\u30ff\u3400-\u9fff]/.test(item.title);
+}
+
 function isTranslatable(themeId) {
   if (themeId === CUSTOM_THEME.id) return customSearch.lang === 'en';
+  if (themeId === READ_LATER_THEME.id) return readLater.load().some(isEnglishItem);
   return Boolean(themes.find((t) => t.id === themeId)?.translatable);
 }
 
@@ -121,6 +156,11 @@ function updateTranslateToggle() {
     : 'DEEPL_API_KEY を設定すると翻訳できます（README 参照）';
 }
 
+function langFor(themeId) {
+  if (themeId === CUSTOM_THEME.id) return customSearch.lang;
+  return themes.find((t) => t.id === themeId)?.lang ?? 'ja';
+}
+
 // 記事を登録したタブ名（「後で読む」タブでどこから登録したかを表示するため）
 function themeLabelFor(themeId) {
   if (themeId === CUSTOM_THEME.id) return `カスタム「${customSearch.query}」`;
@@ -142,10 +182,15 @@ function confirmRemoveOldest(oldest) {
   );
 }
 
-function onStarClick(item, themeLabel) {
+function onStarClick(item, { themeLabel, lang }, button) {
+  // 押したことが分かるよう、☆ を小さく弾ませる
+  button.classList.remove('is-popping');
+  void button.offsetWidth; // アニメーションを再生し直すためにリフローさせる
+  button.classList.add('is-popping');
+
   let result;
   try {
-    result = readLater.toggle(item, { themeLabel, confirmRemoveOldest });
+    result = readLater.toggle(item, { themeLabel, lang, confirmRemoveOldest });
   } catch {
     window.alert('「後で読む」を保存できませんでした。ブラウザの設定で保存が無効になっている可能性があります。');
     return;
@@ -166,11 +211,12 @@ function onReadLaterChanged() {
   }
 }
 
-function renderItems(items, { themeLabel = '', showThemeLabel = false } = {}) {
+function renderItems(items, { themeLabel = '', lang = 'ja', showThemeLabel = false } = {}) {
   const savedLinks = readLater.links();
-  listEl.replaceChildren(...items.map((item) => {
+  listEl.replaceChildren(...items.map((item, index) => {
     const li = document.createElement('li');
     li.className = 'news-item';
+    li.style.setProperty('--i', index); // 上から順に浮かび上がらせる
 
     const body = document.createElement('div');
     body.className = 'news-body';
@@ -193,11 +239,26 @@ function renderItems(items, { themeLabel = '', showThemeLabel = false } = {}) {
 
     const meta = document.createElement('div');
     meta.className = 'news-meta';
-    meta.textContent = [
-      showThemeLabel && item.themeLabel,
-      item.source,
-      formatDate(item.publishedAt),
-    ].filter(Boolean).join(' ・ ');
+    if (showThemeLabel && item.themeLabel) {
+      const chip = document.createElement('span');
+      chip.className = 'news-chip';
+      chip.textContent = item.themeLabel;
+      meta.append(chip);
+    }
+    if (item.source) {
+      const source = document.createElement('span');
+      source.className = 'news-source';
+      source.textContent = item.source;
+      meta.append(source);
+    }
+    if (item.publishedAt) {
+      const time = document.createElement('time');
+      time.className = 'news-time';
+      time.dateTime = item.publishedAt;
+      time.title = formatDate(item.publishedAt);
+      time.textContent = formatRelative(item.publishedAt);
+      meta.append(time);
+    }
     body.append(meta);
 
     const star = document.createElement('button');
@@ -205,18 +266,75 @@ function renderItems(items, { themeLabel = '', showThemeLabel = false } = {}) {
     star.className = 'star';
     star.dataset.link = item.link;
     setStar(star, savedLinks.has(item.link));
-    star.addEventListener('click', () => onStarClick(item, item.themeLabel ?? themeLabel));
+    star.addEventListener('click', () => onStarClick(item, {
+      themeLabel: item.themeLabel ?? themeLabel,
+      lang: item.lang ?? lang,
+    }, star));
 
     li.append(body, star);
     return li;
   }));
 }
 
-function renderReadLater() {
+// 読み込み中は記事カードの形だけを表示する
+function renderSkeleton() {
+  listEl.replaceChildren(...Array.from({ length: SKELETON_COUNT }, () => {
+    const li = document.createElement('li');
+    li.className = 'news-item skeleton';
+    li.setAttribute('aria-hidden', 'true');
+    for (const modifier of ['', '', 'is-short']) {
+      const line = document.createElement('div');
+      line.className = `skeleton-line ${modifier}`.trim();
+      li.append(line);
+    }
+    return li;
+  }));
+}
+
+function renderSectionHead(themeId) {
+  document.documentElement.dataset.section = themeId;
+  sectionDescEl.textContent = SECTION_DESCRIPTIONS[themeId] ?? '';
+}
+
+function renderReadLater({ fetchMissing = true } = {}) {
   showNotice('');
+  updateTranslateToggle();
   const list = readLater.load().reverse(); // 新しく登録した順に表示
-  renderItems(list, { showThemeLabel: true });
+  // 翻訳オフのときは保存済みの訳があっても原文だけを出す
+  const showTranslation = translateEl.checked;
+  renderItems(
+    list.map((item) => (showTranslation ? item : { ...item, translatedTitle: undefined })),
+    { showThemeLabel: true },
+  );
   showStatus(list.length ? '' : 'まだありません。記事の ☆ をタップすると、ここに追加されます。');
+
+  if (!fetchMissing || !shouldTranslate(READ_LATER_THEME.id)) return;
+  const missing = [...new Set(list
+    .filter((item) => isEnglishItem(item) && !item.translatedTitle)
+    .map((item) => item.title)
+    .filter((title) => title.length <= MAX_TRANSLATE_TEXT_LENGTH))];
+  if (missing.length) translateSavedTitles(missing);
+}
+
+// 訳のない保存済み見出しをサーバーで翻訳し、ブラウザの保存内容に書き込んでから表示し直す
+async function translateSavedTitles(texts) {
+  showStatus('翻訳中…');
+  let error = '';
+  try {
+    const res = await fetch('/api/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    readLater.setTranslations(new Map(texts.map((text, i) => [text, data.translations[i]])));
+  } catch (err) {
+    error = err.message || '翻訳に失敗しました';
+  }
+  if (currentThemeId !== READ_LATER_THEME.id) return;
+  renderReadLater({ fetchMissing: false });
+  if (error) showNotice(error);
 }
 
 function renderTabs() {
@@ -245,6 +363,7 @@ function renderTabs() {
 
 async function loadNews(themeId, { force = false } = {}) {
   if (themeId === READ_LATER_THEME.id) {
+    setCurrentFeed(null); // 取得時刻の表示を消す
     renderReadLater();
     return;
   }
@@ -253,13 +372,13 @@ async function loadNews(themeId, { force = false } = {}) {
   const request = requestFor(themeId);
   if (!request) {
     setCurrentFeed(null);
-    listEl.replaceChildren();
-    showStatus('キーワードを入力して検索してください');
+      listEl.replaceChildren();
+    showStatus('キーワードで Google News を検索（直近 1 週間）');
     return;
   }
 
   const { url, cacheKey, translate } = request;
-  const renderOptions = { themeLabel: themeLabelFor(themeId) };
+  const renderOptions = { themeLabel: themeLabelFor(themeId), lang: langFor(themeId) };
   if (!force && newsCache.has(cacheKey)) {
     const cached = newsCache.get(cacheKey);
     renderItems(cached.items, renderOptions);
@@ -268,7 +387,7 @@ async function loadNews(themeId, { force = false } = {}) {
     return;
   }
 
-  listEl.replaceChildren();
+  renderSkeleton();
   setCurrentFeed(null);
   reloadEl.disabled = true; // 読み込み中の連打を防ぐ
   showStatus(translate ? '読み込み・翻訳中…' : '読み込み中…');
@@ -297,6 +416,7 @@ async function loadNews(themeId, { force = false } = {}) {
   } catch (err) {
     if (cacheKey !== requestFor(currentThemeId)?.cacheKey) return;
     setCurrentFeed(null);
+      listEl.replaceChildren();
     showStatus(err.message || 'ニュースの取得に失敗しました');
   }
 }
@@ -305,8 +425,12 @@ function selectTheme(themeId) {
   currentThemeId = themeId;
   try { localStorage.setItem(TAB_STORAGE_KEY, themeId); } catch {}
   renderTabs();
+  // スマホでタブが横に隠れていても、選んだタブが見えるようにする
+  tabsEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  renderSectionHead(themeId);
   customFormEl.hidden = themeId !== CUSTOM_THEME.id;
-  toolbarEl.hidden = themeId === READ_LATER_THEME.id;
+  // カスタムは「検索」ボタンで取得し直し、後で読むは通信しないため、再読み込みボタンは出さない
+  reloadEl.hidden = themeId === CUSTOM_THEME.id || themeId === READ_LATER_THEME.id;
   updateTranslateToggle();
   loadNews(themeId);
 }
@@ -334,6 +458,12 @@ translateEl.addEventListener('change', () => {
 });
 
 async function init() {
+  const now = new Date();
+  todayEl.dateTime = now.toISOString().slice(0, 10);
+  todayEl.textContent = now.toLocaleDateString('ja-JP', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
+  });
+
   try {
     const res = await fetch('/api/themes');
     ({ themes, translationEnabled } = await res.json());
