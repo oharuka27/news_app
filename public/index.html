@@ -12,6 +12,15 @@
     <nav id="tabs" class="tabs" role="tablist" aria-label="テーマ"></nav>
   </header>
   <main class="main" id="panel" role="tabpanel">
+    <form id="custom-form" class="custom-form" hidden>
+      <input id="custom-query" class="custom-query" type="search" maxlength="100"
+             placeholder="キーワード（例: 半導体、Apple、円安）" aria-label="検索キーワード" required>
+      <select id="custom-lang" class="custom-lang" aria-label="検索する言語">
+        <option value="ja">日本語ニュース</option>
+        <option value="en">英語ニュース</option>
+      </select>
+      <button class="button button-primary" type="submit">検索</button>
+    </form>
     <div class="toolbar">
       <label id="translate-toggle" class="toggle" hidden>
         <input id="translate" type="checkbox">

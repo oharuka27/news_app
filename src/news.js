@@ -3,6 +3,7 @@ import Parser from 'rss-parser';
 // Google News RSS は API キー不要・無料で利用できる
 const GOOGLE_NEWS_BASE = 'https://news.google.com/rss';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 取得元への負荷を抑えるため 10 分キャッシュ
+const MAX_CACHE_ENTRIES = 200; // カスタム検索でキーワードごとに増え続けないよう上限を設ける
 
 const parser = new Parser({
   timeout: 10000,
@@ -68,6 +69,9 @@ export async function fetchFeed(url, { limit = 10, sortByDate = false } = {}) {
   });
   if (sortByDate) items.sort(byDateDesc);
 
+  cache.delete(url);
   cache.set(url, { at: Date.now(), items });
+  // Map は挿入順を保つので、先頭が最も古いエントリ
+  if (cache.size > MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value);
   return items.slice(0, limit);
 }

@@ -1,6 +1,6 @@
 import net from 'node:net';
 import express from 'express';
-import { fetchFeed } from './src/news.js';
+import { fetchFeed, searchUrl } from './src/news.js';
 import { THEMES, findTheme } from './src/themes.js';
 import { isTranslationEnabled, translateToJapanese, TranslationError } from './src/translate.js';
 
@@ -42,30 +42,59 @@ async function withTranslatedTitles(items) {
   }
 }
 
+async function sendNews(res, { url, sortByDate, translate, extra }) {
+  let items;
+  try {
+    items = await fetchFeed(url, { limit: ITEMS_PER_THEME, sortByDate });
+  } catch (err) {
+    console.error(url, err);
+    res.status(502).json({ error: 'ニュースの取得に失敗しました' });
+    return;
+  }
+
+  if (translate) {
+    res.json({ ...extra, ...(await withTranslatedTitles(items)) });
+    return;
+  }
+  res.json({ ...extra, items });
+}
+
 app.get('/api/news/:themeId', async (req, res) => {
   const theme = findTheme(req.params.themeId);
   if (!theme) {
     res.status(404).json({ error: '不明なテーマです' });
     return;
   }
+  await sendNews(res, {
+    url: theme.url,
+    sortByDate: theme.sortByDate,
+    translate: req.query.translate === '1' && theme.translatable,
+    extra: { theme: theme.id },
+  });
+});
 
-  let items;
-  try {
-    items = await fetchFeed(theme.url, {
-      limit: ITEMS_PER_THEME,
-      sortByDate: theme.sortByDate,
-    });
-  } catch (err) {
-    console.error(`[${theme.id}]`, err);
-    res.status(502).json({ error: 'ニュースの取得に失敗しました' });
+const MAX_QUERY_LENGTH = 100;
+const SEARCH_LANGS = ['ja', 'en'];
+
+// カスタムタブ: ユーザーが入力したキーワードで Google News を検索する
+app.get('/api/search', async (req, res) => {
+  const q = String(req.query.q ?? '').trim();
+  const lang = SEARCH_LANGS.includes(req.query.lang) ? req.query.lang : 'ja';
+  if (!q) {
+    res.status(400).json({ error: 'キーワードを入力してください' });
     return;
   }
-
-  if (req.query.translate === '1' && theme.translatable) {
-    res.json({ theme: theme.id, ...(await withTranslatedTitles(items)) });
+  if (q.length > MAX_QUERY_LENGTH) {
+    res.status(400).json({ error: `キーワードは ${MAX_QUERY_LENGTH} 文字以内で入力してください` });
     return;
   }
-  res.json({ theme: theme.id, items });
+  // 直近 1 週間に絞って新しい順に並べる（ニッチなキーワードでも件数を確保するため 1 日より広め）
+  await sendNews(res, {
+    url: searchUrl(`${q} when:7d`, lang),
+    sortByDate: true,
+    translate: req.query.translate === '1' && lang === 'en',
+    extra: { query: q, lang },
+  });
 });
 
 app.listen(PORT, () => {

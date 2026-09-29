@@ -2,6 +2,7 @@
 // 無料枠を節約するため、一度翻訳した文はメモリにキャッシュして再利用する。
 
 const MAX_TEXTS_PER_REQUEST = 50; // DeepL API の 1 リクエストあたりの上限
+const MAX_CACHE_ENTRIES = 5000;
 const translationCache = new Map();
 
 function apiKey() {
@@ -56,5 +57,10 @@ export async function translateToJapanese(texts) {
     const results = await requestTranslation(key, chunk);
     chunk.forEach((text, j) => translationCache.set(text, results[j]));
   }
-  return texts.map((t) => translationCache.get(t) ?? t);
+  const translated = texts.map((t) => translationCache.get(t) ?? t);
+  // 古いものから捨てる（今回返す分は計算済みなので消えても問題ない）
+  while (translationCache.size > MAX_CACHE_ENTRIES) {
+    translationCache.delete(translationCache.keys().next().value);
+  }
+  return translated;
 }

@@ -77,6 +77,32 @@ body {
   border-bottom-color: var(--accent);
 }
 
+.custom-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.custom-form[hidden] {
+  display: none;
+}
+
+.custom-query,
+.custom-lang {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  padding: 6px 10px;
+}
+
+.custom-query {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -99,6 +125,13 @@ body {
 
 .button:hover {
   border-color: var(--accent);
+}
+
+.button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+  font-weight: 600;
 }
 
 .main {
