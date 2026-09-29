@@ -46,17 +46,29 @@ async function requestTranslation(key, texts) {
   return data.translations.map((t) => t.text);
 }
 
+// 翻訳中の文（原文 → Promise）。同時に来た要求で同じ文を二重に翻訳しない
+const pendingTranslations = new Map();
+
 // texts と同じ順番で翻訳結果を返す
 export async function translateToJapanese(texts) {
   const key = apiKey();
   if (!key) throw new TranslationError('DEEPL_API_KEY が設定されていません');
 
-  const untranslated = [...new Set(texts.filter((t) => t && !translationCache.has(t)))];
-  for (let i = 0; i < untranslated.length; i += MAX_TEXTS_PER_REQUEST) {
-    const chunk = untranslated.slice(i, i + MAX_TEXTS_PER_REQUEST);
-    const results = await requestTranslation(key, chunk);
-    chunk.forEach((text, j) => translationCache.set(text, results[j]));
+  // 翻訳済みでも翻訳中でもない文だけを DeepL に送る
+  const toRequest = [...new Set(texts.filter(
+    (t) => t && !translationCache.has(t) && !pendingTranslations.has(t),
+  ))];
+  for (let i = 0; i < toRequest.length; i += MAX_TEXTS_PER_REQUEST) {
+    const chunk = toRequest.slice(i, i + MAX_TEXTS_PER_REQUEST);
+    const request = requestTranslation(key, chunk)
+      .then((results) => chunk.forEach((text, j) => translationCache.set(text, results[j])))
+      .finally(() => chunk.forEach((text) => pendingTranslations.delete(text)));
+    chunk.forEach((text) => pendingTranslations.set(text, request));
   }
+
+  // 自分が送った分も、他の要求が翻訳中の分も、まとめて完了を待つ
+  await Promise.all(new Set(texts.map((t) => pendingTranslations.get(t)).filter(Boolean)));
+
   const translated = texts.map((t) => translationCache.get(t) ?? t);
   // 古いものから捨てる（今回返す分は計算済みなので消えても問題ない）
   while (translationCache.size > MAX_CACHE_ENTRIES) {

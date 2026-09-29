@@ -43,20 +43,22 @@ async function withTranslatedTitles(items) {
 }
 
 async function sendNews(res, { url, sortByDate, translate, extra }) {
-  let items;
+  let feed;
   try {
-    items = await fetchFeed(url, { limit: ITEMS_PER_THEME, sortByDate });
+    feed = await fetchFeed(url, { limit: ITEMS_PER_THEME, sortByDate });
   } catch (err) {
     console.error(url, err);
     res.status(502).json({ error: 'ニュースの取得に失敗しました' });
     return;
   }
 
+  const { items, fetchedAt, stale } = feed;
+  const meta = { ...extra, fetchedAt, stale };
   if (translate) {
-    res.json({ ...extra, ...(await withTranslatedTitles(items)) });
+    res.json({ ...meta, ...(await withTranslatedTitles(items)) });
     return;
   }
-  res.json({ ...extra, items });
+  res.json({ ...meta, items });
 }
 
 app.get('/api/news/:themeId', async (req, res) => {

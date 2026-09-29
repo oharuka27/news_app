@@ -146,12 +146,15 @@ async function loadNews(themeId, { force = false } = {}) {
     const res = await fetch(url);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    // 翻訳に失敗した結果はキャッシュせず、次回また翻訳を試みる
-    if (!data.translationError) newsCache.set(cacheKey, data.items);
+    // 翻訳に失敗した結果や、取得に失敗して返された古い内容はキャッシュせず、次回また取得を試みる
+    if (!data.translationError && !data.stale) newsCache.set(cacheKey, data.items);
     // 読み込み中にタブや検索条件が変わっていたら描画しない
     if (cacheKey !== requestFor(currentThemeId)?.cacheKey) return;
     renderItems(data.items);
-    showNotice(data.translationError);
+    showNotice([
+      data.stale && `ニュースの取得に失敗したため、${formatDate(data.fetchedAt)} 時点の内容を表示しています`,
+      data.translationError,
+    ].filter(Boolean).join(' / '));
     showStatus(data.items.length ? '' : 'ニュースが見つかりませんでした');
   } catch (err) {
     if (cacheKey !== requestFor(currentThemeId)?.cacheKey) return;

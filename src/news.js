@@ -51,12 +51,10 @@ function byDateDesc(a, b) {
   return (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
 }
 
-export async function fetchFeed(url, { limit = 10, sortByDate = false } = {}) {
-  const cached = cache.get(url);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    return cached.items.slice(0, limit);
-  }
+// 取得中のフィード（URL → Promise）。同時に来た要求で Google への取得を共有する
+const pendingFetches = new Map();
 
+async function fetchAndStore(url, sortByDate) {
   const feed = await parser.parseURL(url);
   const items = feed.items.map((item) => {
     const source = sourceNameOf(item);
@@ -69,9 +67,40 @@ export async function fetchFeed(url, { limit = 10, sortByDate = false } = {}) {
   });
   if (sortByDate) items.sort(byDateDesc);
 
+  const entry = { at: Date.now(), items };
   cache.delete(url);
-  cache.set(url, { at: Date.now(), items });
+  cache.set(url, entry);
   // Map は挿入順を保つので、先頭が最も古いエントリ
   if (cache.size > MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value);
-  return items.slice(0, limit);
+  return entry;
+}
+
+function toResult(entry, limit, stale) {
+  return { items: entry.items.slice(0, limit), fetchedAt: new Date(entry.at).toISOString(), stale };
+}
+
+// 取得結果は全利用者で共有する。
+// - 10 分以内に取得済みならキャッシュを返す（誰が再読み込みしても同じ内容）
+// - 同じフィードを取得中なら自分では取りに行かず、その結果を待つ
+// - 取得に失敗しても期限切れのキャッシュがあればそれを返す（stale: true）
+export async function fetchFeed(url, { limit = 10, sortByDate = false } = {}) {
+  const cached = cache.get(url);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return toResult(cached, limit, false);
+  }
+
+  let pending = pendingFetches.get(url);
+  if (!pending) {
+    pending = fetchAndStore(url, sortByDate).finally(() => pendingFetches.delete(url));
+    pendingFetches.set(url, pending);
+  }
+
+  try {
+    return toResult(await pending, limit, false);
+  } catch (err) {
+    const stale = cache.get(url);
+    if (!stale) throw err;
+    console.warn(`フィードの取得に失敗したため前回の内容を返します: ${url}`, err.message);
+    return toResult(stale, limit, true);
+  }
 }
