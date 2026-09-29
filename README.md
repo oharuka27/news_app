@@ -88,7 +88,6 @@
 | GET | `/api/themes` | テーマ（タブ）の一覧を返す |
 | GET | `/api/news/:themeId` | 指定テーマのニュースを最大 10 件返す（例: `/api/news/tse`） |
 | GET | `/api/news/:themeId?translate=1` | 翻訳対象テーマの場合、各記事に `translatedTitle` を付けて返す |
-
 | GET | `/api/search?q=キーワード&lang=ja\|en` | カスタム検索。`lang` 省略時は `ja`。キーワードは 100 文字まで |
 | GET | `/api/search?q=...&lang=en&translate=1` | 英語検索の結果に `translatedTitle` を付けて返す |
 
