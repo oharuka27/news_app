@@ -1,11 +1,13 @@
 import { searchUrl, topicUrl } from './news.js';
 
 // 固定テーマの定義。
-// - 世界 / NY市場 / 仮想通貨 は英語圏の一次情報を拾うため英語フィードを使う
+// - 世界 / NY市場 / 仮想通貨 は英語圏の一次情報を拾うため英語フィードを使い、
+//   translatable: true で DeepL による日本語翻訳を有効にする
 // - 検索フィードは関連度順で古い記事が混ざるため、新しい順に並べ替える
 export const THEMES = [
   {
     id: 'world',
+    translatable: true,
     label: '世界',
     url: topicUrl('WORLD', 'en'),
     lang: 'en',
@@ -18,6 +20,7 @@ export const THEMES = [
   },
   {
     id: 'ny-market',
+    translatable: true,
     label: 'NY市場',
     url: searchUrl('"Wall Street" OR "Dow Jones" OR Nasdaq OR "S&P 500" when:1d', 'en'),
     lang: 'en',
@@ -32,6 +35,7 @@ export const THEMES = [
   },
   {
     id: 'crypto',
+    translatable: true,
     label: '仮想通貨',
     url: searchUrl('bitcoin OR ethereum OR cryptocurrency when:1d', 'en'),
     lang: 'en',

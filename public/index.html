@@ -13,8 +13,13 @@
   </header>
   <main class="main" id="panel" role="tabpanel">
     <div class="toolbar">
+      <label id="translate-toggle" class="toggle" hidden>
+        <input id="translate" type="checkbox">
+        日本語に翻訳（DeepL）
+      </label>
       <button id="reload" class="button" type="button">再読み込み</button>
     </div>
+    <p id="notice" class="notice" hidden></p>
     <p id="status" class="status">読み込み中…</p>
     <ol id="news-list" class="news-list"></ol>
   </main>
