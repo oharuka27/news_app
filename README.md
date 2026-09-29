@@ -26,10 +26,12 @@
     固定テーマもカスタム検索も同じ仕組みで実装できます。
   - NewsAPI などの有料/制限付き API は使いません。
   - 注意: Google News RSS は「個人の非商用利用」が前提です（フィード内の利用規約より）。
-- **サーバー: Node.js + Express**
-  - ブラウザから直接 RSS を取得すると CORS で弾かれるため、
-    ローカルの小さなサーバーが RSS を取得して JSON で返します。
-  - ホスティング費用が不要なよう、ローカルマシンでの実行を前提としています。
+- **サーバー: Cloudflare Workers（無料プラン）**
+  - ブラウザから直接 RSS を取得すると CORS で弾かれるため、Worker が RSS を取得して JSON で返します。
+  - 画面（`public/`）は Workers の静的アセットとして配信します（静的ファイルの配信は無料・回数無制限）。
+  - 無料プランは 1 日 10 万リクエスト、1 リクエストあたり CPU 時間 10ms まで。
+    RSS は汎用 XML パーサーだと 1 回 4〜7ms かかるため、必要な要素だけを正規表現で読み取る実装（約 0.4ms）にしています
+    （[src/rss.js](src/rss.js)）。
 - **キャッシュ**（詳細は後述の「再読み込みとキャッシュ」）
   - 同じフィードは 10 分間メモリにキャッシュし、取得元への負荷とレスポンス時間を抑えます。
     カスタム検索で増え続けないよう、最大 200 フィード分（翻訳は 5,000 件）を上限に古いものから捨てます。
@@ -101,12 +103,14 @@
 
 ```
 .
-├── server.js          # Express サーバー（API と静的ファイル配信）
+├── wrangler.jsonc     # Cloudflare Workers の設定
 ├── src/
+│   ├── index.js       # Worker の入口（API のルーティング）
 │   ├── news.js        # Google News RSS の取得・整形・キャッシュ
+│   ├── rss.js         # RSS から必要な要素だけを取り出す軽量パーサー
 │   ├── themes.js      # 固定テーマ（タブ）の定義
 │   └── translate.js   # DeepL API での翻訳とキャッシュ
-├── .env.example       # 環境変数のサンプル（.env にコピーして使う）
+├── .dev.vars.example  # ローカル開発用の秘密情報のサンプル（.dev.vars にコピーして使う）
 └── public/            # フロントエンド（素の HTML / CSS / JS、ビルド不要）
     ├── index.html
     ├── app.js
@@ -160,38 +164,29 @@
 # 依存パッケージのインストール（初回のみ）
 npm install
 
-# 起動
-npm start
-
-# 開発用（ファイル変更で自動再起動）
+# 起動（Cloudflare Workers の実行環境をローカルで再現する。ファイル変更は自動で反映）
 npm run dev
 ```
 
-起動後、ブラウザで http://localhost:3000 を開きます。
-
-### DeepL 翻訳を使う場合（任意）
-
-1. https://www.deepl.com/ja/pro-api から **DeepL API Free** に登録し、認証キー（末尾が `:fx`）を取得
-2. `.env` を作成してキーを設定
-
-   ```bash
-   cp .env.example .env
-   # .env を開いて DEEPL_API_KEY=xxxxxxxx:fx を記入
-   ```
-
-3. `npm start` で起動し、ログに `DeepL 翻訳: 有効` と出れば OK
-
-`.env` は `.gitignore` 済みなので、キーがコミットされることはありません。
-使用済み文字数は DeepL のアカウントページで確認できます。
+起動後、ブラウザで http://localhost:8787 を開きます。
 
 ポートを変える場合:
 
 ```bash
-PORT=8080 npm start
+npm run dev -- --port 8080
 ```
 
-## 補足・トラブルシューティング
+### DeepL 翻訳を使う場合（任意）
 
-- **翻訳だけ失敗する（ログに `ETIMEDOUT`）**:
-  Node.js は IPv4/IPv6 の接続先を 250ms ごとに切り替えるため、接続に時間がかかるサーバーだと失敗することがあります
-  （WSL 環境で DeepL への接続時に発生を確認）。`server.js` で待ち時間を 2 秒に延ばして対処済みです。
+1. https://www.deepl.com/ja/pro-api から **DeepL API Free** に登録し、認証キー（末尾が `:fx`）を取得
+2. `.dev.vars` を作成してキーを設定
+
+   ```bash
+   cp .dev.vars.example .dev.vars
+   # .dev.vars を開いて DEEPL_API_KEY=xxxxxxxx:fx を記入
+   ```
+
+3. `npm run dev` で起動し、翻訳チェックボックスが押せれば OK
+
+`.dev.vars` は `.gitignore` 済みなので、キーがコミットされることはありません。
+使用済み文字数は DeepL のアカウントページで確認できます。

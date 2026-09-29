@@ -1,14 +1,11 @@
-import Parser from 'rss-parser';
+import { parseRssItems } from './rss.js';
 
 // Google News RSS は API キー不要・無料で利用できる
 const GOOGLE_NEWS_BASE = 'https://news.google.com/rss';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 取得元への負荷を抑えるため 10 分キャッシュ
 const MAX_CACHE_ENTRIES = 200; // カスタム検索でキーワードごとに増え続けないよう上限を設ける
 
-const parser = new Parser({
-  timeout: 10000,
-  customFields: { item: ['source'] },
-});
+const FETCH_TIMEOUT_MS = 10000;
 
 const cache = new Map();
 
@@ -41,10 +38,18 @@ function splitTitle(title, sourceName) {
   return title;
 }
 
-function sourceNameOf(item) {
-  const src = item.source;
-  if (!src) return '';
-  return typeof src === 'string' ? src : (src._ ?? '');
+function toIsoDate(pubDate) {
+  const date = new Date(pubDate);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+async function downloadFeed(url) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; news-app/1.0)' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Google News RSS の取得に失敗しました (HTTP ${res.status})`);
+  return res.text();
 }
 
 function byDateDesc(a, b) {
@@ -55,16 +60,12 @@ function byDateDesc(a, b) {
 const pendingFetches = new Map();
 
 async function fetchAndStore(url, sortByDate) {
-  const feed = await parser.parseURL(url);
-  const items = feed.items.map((item) => {
-    const source = sourceNameOf(item);
-    return {
-      title: splitTitle(item.title ?? '', source),
-      link: item.link,
-      source,
-      publishedAt: item.isoDate ?? null,
-    };
-  });
+  const items = parseRssItems(await downloadFeed(url)).map((item) => ({
+    title: splitTitle(item.title, item.source),
+    link: item.link,
+    source: item.source,
+    publishedAt: toIsoDate(item.pubDate),
+  }));
   if (sortByDate) items.sort(byDateDesc);
 
   const entry = { at: Date.now(), items };

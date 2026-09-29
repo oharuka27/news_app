@@ -1,0 +1,7 @@
+# ローカル開発（npm run dev）用の秘密情報。.dev.vars にコピーして使う。
+# 本番は `npx wrangler secret put DEEPL_API_KEY` か、Cloudflare ダッシュボードの
+# Worker の「設定 > 変数とシークレット」で登録する。
+#
+# DeepL API Free の認証キー（末尾が :fx のもの）。
+# 未設定でもアプリは動作します（翻訳チェックボックスが無効になるだけです）。
+DEEPL_API_KEY=

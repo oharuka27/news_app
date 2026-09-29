@@ -5,10 +5,6 @@ const MAX_TEXTS_PER_REQUEST = 50; // DeepL API の 1 リクエストあたりの
 const MAX_CACHE_ENTRIES = 5000;
 const translationCache = new Map();
 
-function apiKey() {
-  return process.env.DEEPL_API_KEY?.trim() || '';
-}
-
 // Free プランのキーは末尾が ":fx" で、エンドポイントが Pro と異なる
 function endpoint(key) {
   return key.endsWith(':fx')
@@ -16,8 +12,8 @@ function endpoint(key) {
     : 'https://api.deepl.com/v2/translate';
 }
 
-export function isTranslationEnabled() {
-  return apiKey() !== '';
+export function isTranslationEnabled(apiKey) {
+  return Boolean(apiKey?.trim());
 }
 
 export class TranslationError extends Error {}
@@ -50,8 +46,8 @@ async function requestTranslation(key, texts) {
 const pendingTranslations = new Map();
 
 // texts と同じ順番で翻訳結果を返す
-export async function translateToJapanese(texts) {
-  const key = apiKey();
+export async function translateToJapanese(texts, { apiKey }) {
+  const key = apiKey?.trim() ?? '';
   if (!key) throw new TranslationError('DEEPL_API_KEY が設定されていません');
 
   // 翻訳済みでも翻訳中でもない文だけを DeepL に送る
